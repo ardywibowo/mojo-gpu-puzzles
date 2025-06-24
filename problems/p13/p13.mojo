@@ -28,7 +28,22 @@ fn axis_sum[
     global_i = block_dim.x * block_idx.x + thread_idx.x
     local_i = thread_idx.x
     batch = block_idx.y
-    # FILL ME IN (roughly 15 lines)
+
+    shared = tb[dtype]().row_major[TPB]().shared().alloc()
+    if global_i < size:
+        shared[local_i] = a[batch, global_i]
+
+    barrier()
+
+    stride = 1
+    while stride < TPB:
+        if local_i + stride < TPB:
+            shared[local_i + stride] += shared[local_i]
+
+        barrier()
+        stride *= 2
+
+    output[batch, 0] = shared[TPB - 1]
 
 
 # ANCHOR_END: axis_sum

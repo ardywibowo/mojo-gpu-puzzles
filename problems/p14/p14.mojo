@@ -25,7 +25,15 @@ fn naive_matmul[
 ):
     row = block_dim.y * block_idx.y + thread_idx.y
     col = block_dim.x * block_idx.x + thread_idx.x
-    # FILL ME IN (roughly 6 lines)
+
+    if row < SIZE and col < SIZE:
+        acc: output.element_type = 0
+
+        @parameter
+        for k in range(SIZE):
+            acc += a[row, k] * b[k, col]
+
+        output[row, col] = acc
 
 
 # ANCHOR_END: naive_matmul
@@ -43,7 +51,24 @@ fn single_block_matmul[
     col = block_dim.x * block_idx.x + thread_idx.x
     local_row = thread_idx.y
     local_col = thread_idx.x
-    # FILL ME IN (roughly 12 lines)
+
+    shared_a = tb[dtype]().row_major[TPB, TPB]().shared().alloc()
+    shared_b = tb[dtype]().row_major[TPB, TPB]().shared().alloc()
+
+    if row < SIZE and col < SIZE:
+        shared_a[local_row, local_col] = a[row, col]
+        shared_b[local_row, local_col] = b[row, col]
+
+    barrier()
+
+    if row < SIZE and col < SIZE:
+        acc: output.element_type = 0
+
+        @parameter
+        for k in range(SIZE):
+            acc += shared_a[local_row, k] * shared_b[k, local_col]
+
+        output[row, col] = acc
 
 
 # ANCHOR_END: single_block_matmul
@@ -66,7 +91,37 @@ fn matmul_tiled[
     local_col = thread_idx.x
     global_row = block_idx.y * TPB + local_row
     global_col = block_idx.x * TPB + local_col
-    # FILL ME IN (roughly 20 lines)
+
+    shared_a = tb[dtype]().row_major[TPB, TPB]().shared().alloc()
+    shared_b = tb[dtype]().row_major[TPB, TPB]().shared().alloc()
+    shared_c = tb[dtype]().row_major[TPB, TPB]().shared().alloc()
+
+    if global_row < SIZE_TILED and global_col < SIZE_TILED:
+        for offset in range(0, SIZE_TILED, TPB):
+            if (
+                local_row + offset < SIZE_TILED
+                and local_col + offset < SIZE_TILED
+            ):
+                shared_a[local_row, local_col] = a[
+                    global_row, local_col + offset
+                ]
+                shared_b[local_row, local_col] = b[
+                    local_row + offset, global_col
+                ]
+
+            barrier()
+
+            acc: output.element_type = 0
+
+            @parameter
+            for k in range(TPB):
+                acc += shared_a[local_row, k] * shared_b[k, local_col]
+
+            shared_c[local_row, local_col] += acc
+
+            barrier()
+
+        output[global_row, global_col] = shared_c[local_row, local_col]
 
 
 # ANCHOR_END: matmul_tiled
