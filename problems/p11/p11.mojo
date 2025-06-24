@@ -86,18 +86,20 @@ fn conv_1d_block_boundary[
     if local_i < CONV_2:
         shared_b[local_i] = b[local_i]
 
-    if local_i >= CONV_2 and local_i < 2 * CONV_2 - 1:
-        shared_a[local_i + TPB - CONV_2] = a[global_i + TPB - CONV_2]
+    if local_i < CONV_2 - 1:
+        shared_a[local_i + TPB] = a[global_i + TPB]
 
     barrier()
 
-    if local_i < TPB:
-        output[global_i] = (
-            shared_a[local_i] * shared_b[0]
-            + shared_a[local_i + 1] * shared_b[1]
-            + shared_a[local_i + 2] * shared_b[2]
-            + shared_a[local_i + 3] * shared_b[3]
-        )
+    if global_i < SIZE_2:
+        local_sum: output.element_type = 0
+
+        @parameter
+        for j in range(CONV_2):
+            if global_i + j < SIZE_2:
+                local_sum += shared_a[local_i + j] * shared_b[j]
+
+        output[global_i] = local_sum
 
 
 # ANCHOR_END: conv_1d_block_boundary
