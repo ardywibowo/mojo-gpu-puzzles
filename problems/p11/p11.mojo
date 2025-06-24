@@ -26,7 +26,32 @@ fn conv_1d_simple[
 ):
     global_i = block_dim.x * block_idx.x + thread_idx.x
     local_i = thread_idx.x
-    # FILL ME IN (roughly 14 lines)
+
+    # Allocate shared memory using tensor builder
+    shared_a = tb[dtype]().row_major[TPB]().shared().alloc()
+    shared_b = tb[dtype]().row_major[CONV]().shared().alloc()
+
+    if global_i < SIZE:
+        shared_a[local_i] = a[global_i]
+
+    if local_i < CONV:
+        shared_b[local_i] = b[local_i]
+
+    barrier()
+
+    if local_i <= TPB - 3:
+        output[global_i] = (
+            shared_a[local_i] * shared_b[0]
+            + shared_a[local_i + 1] * shared_b[1]
+            + shared_a[local_i + 2] * shared_b[2]
+        )
+    elif local_i <= TPB - 2:
+        output[global_i] = (
+            shared_a[local_i] * shared_b[0]
+            + shared_a[local_i + 1] * shared_b[1 + 1]
+        )
+    else:
+        output[global_i] = shared_a[local_i] * shared_b[0]
 
 
 # ANCHOR_END: conv_1d_simple
@@ -50,7 +75,29 @@ fn conv_1d_block_boundary[
 ):
     global_i = block_dim.x * block_idx.x + thread_idx.x
     local_i = thread_idx.x
-    # FILL ME IN (roughly 18 lines)
+
+    # Allocate shared memory using tensor builder
+    shared_a = tb[dtype]().row_major[TPB + CONV_2 - 1]().shared().alloc()
+    shared_b = tb[dtype]().row_major[CONV_2]().shared().alloc()
+
+    if global_i < SIZE_2:
+        shared_a[local_i] = a[global_i]
+
+    if local_i < CONV_2:
+        shared_b[local_i] = b[local_i]
+
+    if local_i >= CONV_2 and local_i < 2 * CONV_2 - 1:
+        shared_a[local_i + TPB - CONV_2] = a[global_i + TPB - CONV_2]
+
+    barrier()
+
+    if local_i < TPB:
+        output[global_i] = (
+            shared_a[local_i] * shared_b[0]
+            + shared_a[local_i + 1] * shared_b[1]
+            + shared_a[local_i + 2] * shared_b[2]
+            + shared_a[local_i + 3] * shared_b[3]
+        )
 
 
 # ANCHOR_END: conv_1d_block_boundary
